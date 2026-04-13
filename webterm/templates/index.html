@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WebTerm — SSH & Telnet Client</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- xterm.js from CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+</head>
+<body>
+
+<div id="app">
+    <!-- ─── Sidebar ─── -->
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <span class="logo">&#9000; WebTerm</span>
+            <span class="version">v{{ version }}</span>
+        </div>
+        <div class="sidebar-actions">
+            <button class="btn btn-primary" onclick="showConnectModal()">&#43; New Connection</button>
+        </div>
+        <div class="session-list" id="session-list">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <!-- ─── Main Area ─── -->
+    <div id="main">
+        <!-- Tab Bar -->
+        <div id="tab-bar">
+            <div class="tab-bar-toggle" onclick="toggleSidebar()" title="Toggle sidebar (Ctrl+B)">&#9776;</div>
+            <div id="tab-list"></div>
+        </div>
+
+        <!-- Terminal Container -->
+        <div id="terminal-container">
+            <!-- Welcome Screen -->
+            <div id="welcome-screen">
+                <div class="welcome-logo">&#9000;</div>
+                <h2>WebTerm</h2>
+                <p>Web-based SSH & Telnet client. Connect to remote servers directly from your browser.</p>
+                <button class="btn btn-primary" onclick="showConnectModal()" style="font-size: 15px; padding: 10px 28px;">
+                    &#43; New Connection
+                </button>
+                <div class="shortcuts">
+                    <kbd>Ctrl+Shift+N</kbd> <span>New connection</span>
+                    <kbd>Ctrl+W</kbd> <span>Close tab</span>
+                    <kbd>Ctrl+Tab</kbd> <span>Next tab</span>
+                    <kbd>Ctrl+B</kbd> <span>Toggle sidebar</span>
+                </div>
+            </div>
+
+            <!-- SFTP Panel -->
+            <div id="sftp-panel" class="sftp-panel">
+                <div class="sftp-header">
+                    <span>&#128193; SFTP Browser</span>
+                    <button class="btn-icon" onclick="toggleSftp()">&#10005;</button>
+                </div>
+                <div class="sftp-path">
+                    <input type="text" id="sftp-path-input" value="~"
+                           onkeydown="if(event.key==='Enter') loadSftpDir(this.value)">
+                    <button class="btn btn-sm" onclick="loadSftpDir($('#sftp-path-input').value)">Go</button>
+                </div>
+                <div class="sftp-files" id="sftp-files"></div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div id="status-bar">
+            <span class="status-item" id="status-conn">No connection</span>
+            <span class="spacer"></span>
+            <span class="status-item" id="status-tabs">0 tabs</span>
+            <span class="status-item">
+                <button class="btn-icon" onclick="toggleSftp()" title="SFTP Browser" style="font-size: 13px;">&#128193;</button>
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- ─── Connect Modal ─── -->
+<div class="modal-overlay" id="connect-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>&#128274; New Connection</h3>
+            <button class="btn-icon" onclick="$('#connect-modal').classList.remove('visible')">&#10005;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Protocol</label>
+                <input type="hidden" id="qc-protocol" value="ssh">
+                <div class="protocol-tabs">
+                    <button class="proto-btn active" data-proto="ssh" onclick="setProtocol('ssh')">&#128274; SSH</button>
+                    <button class="proto-btn" data-proto="telnet" onclick="setProtocol('telnet')">&#128225; Telnet</button>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group" style="flex: 3">
+                    <label>Host</label>
+                    <input type="text" id="qc-host" placeholder="192.168.1.1 or server.example.com"
+                           onkeydown="if(event.key==='Enter') quickConnect()">
+                </div>
+                <div class="form-group" style="flex: 1">
+                    <label>Port</label>
+                    <input type="number" id="qc-port" value="22">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="qc-username" placeholder="root">
+            </div>
+
+            <div id="ssh-fields">
+                <div class="form-group">
+                    <label>Authentication</label>
+                    <select id="qc-auth-method" onchange="$('#key-path-group').style.display = this.value === 'key' ? 'block' : 'none'">
+                        <option value="password">Password</option>
+                        <option value="key">Private Key</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="qc-password" placeholder="Enter password"
+                       onkeydown="if(event.key==='Enter') quickConnect()">
+            </div>
+
+            <div class="form-group" id="key-path-group" style="display: none">
+                <label>Key File Path</label>
+                <input type="text" id="qc-key-path" placeholder="/home/user/.ssh/id_rsa">
+            </div>
+
+            <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0">
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Session Name (optional)</label>
+                    <input type="text" id="qc-name" placeholder="My Server">
+                </div>
+                <div class="form-group">
+                    <label>Group</label>
+                    <input type="text" id="qc-group" value="Default">
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="$('#connect-modal').classList.remove('visible')">Cancel</button>
+            <button class="btn" onclick="saveAndConnect()">Save &amp; Connect</button>
+            <button class="btn btn-primary" onclick="quickConnect()">Connect</button>
+        </div>
+    </div>
+</div>
+
+<!-- ─── Password Prompt Modal ─── -->
+<div class="modal-overlay" id="password-modal">
+    <div class="modal" style="width: 380px">
+        <div class="modal-header">
+            <h3>&#128274; Authentication</h3>
+            <button class="btn-icon" onclick="$('#password-modal').classList.remove('visible')">&#10005;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 12px" id="pw-host-label"></p>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="pw-input" placeholder="Enter password"
+                       onkeydown="if(event.key==='Enter') submitPassword()">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="$('#password-modal').classList.remove('visible')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitPassword()">Connect</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+
+</body>
+</html>
