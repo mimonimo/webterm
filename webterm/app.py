@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from webterm import __version__
-from webterm.session_manager import SessionStore, SessionProfile
+from webterm.session_manager import SessionStore, SessionProfile, _safe_profile
 from webterm.ssh_handler import SSHConnection
 from webterm.telnet_handler import TelnetConnection
 
@@ -55,7 +55,7 @@ async def list_sessions():
 @app.post("/api/sessions")
 async def create_session(request: Request):
     data = await request.json()
-    profile = SessionProfile(**data)
+    profile = _safe_profile(data)
     store.add(profile)
     return JSONResponse(profile.to_safe_dict())
 

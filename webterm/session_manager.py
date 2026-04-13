@@ -53,6 +53,15 @@ class SessionProfile:
         return d
 
 
+_PROFILE_FIELDS = {f.name for f in __import__('dataclasses').fields(SessionProfile)}
+
+
+def _safe_profile(data: dict) -> SessionProfile:
+    """Create a SessionProfile, ignoring unknown keys and stripping passwords."""
+    filtered = {k: v for k, v in data.items() if k in _PROFILE_FIELDS and k not in ("password", "jump_password")}
+    return SessionProfile(**filtered)
+
+
 class SessionStore:
     """Persistent session storage backed by JSON file."""
 
@@ -66,7 +75,7 @@ class SessionStore:
             try:
                 data = json.loads(self._path.read_text())
                 for item in data:
-                    s = SessionProfile(**{k: v for k, v in item.items() if k != "password"})
+                    s = _safe_profile(item)
                     self._sessions[s.id] = s
             except (json.JSONDecodeError, TypeError):
                 pass
