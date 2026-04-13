@@ -54,10 +54,13 @@ async def list_sessions():
 
 @app.post("/api/sessions")
 async def create_session(request: Request):
-    data = await request.json()
-    profile = _safe_profile(data)
-    store.add(profile)
-    return JSONResponse(profile.to_safe_dict())
+    try:
+        data = await request.json()
+        profile = _safe_profile(data)
+        store.add(profile)
+        return JSONResponse(profile.to_safe_dict())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 
 @app.put("/api/sessions/{session_id}")

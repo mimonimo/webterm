@@ -892,6 +892,10 @@ async function _saveRangeSessions(ips) {
                 ...jumpConfig,
             }),
         });
+        if (!resp.ok) {
+            console.error(`Failed to create session for ${ip}: ${resp.status} ${resp.statusText}`);
+            continue;
+        }
         const session = await resp.json();
         created.push(session);
     }
