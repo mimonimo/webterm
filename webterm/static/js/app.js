@@ -726,6 +726,15 @@ function showRangeModal() {
     $('#rng-protocol').value = 'ssh';
     $$('#range-modal .proto-btn').forEach(b => b.classList.toggle('active', b.dataset.proto === 'ssh'));
     $('#range-preview').style.display = 'none';
+    // Reset jump host fields
+    if ($('#rng-use-jump')) {
+        $('#rng-use-jump').checked = false;
+        $('#rng-jump-fields').style.display = 'none';
+        $('#rng-jump-host').value = '';
+        $('#rng-jump-port').value = '22';
+        $('#rng-jump-username').value = '';
+        $('#rng-jump-key-path').value = '';
+    }
     modal.classList.add('visible');
     setTimeout(() => $('#rng-start').focus(), 100);
 }
@@ -808,11 +817,34 @@ async function saveRange() {
 async function saveRangeAndConnect() {
     const ips = _getRangeIPs();
     if (!ips) return;
-    const sessions = await _saveRangeSessions(ips);
-    $('#range-modal').classList.remove('visible');
 
-    // Show batch password modal for all created sessions
-    showBatchPasswordModal(sessions, $('#rng-group').value || 'Default');
+    const groupName = $('#rng-group').value || 'Default';
+
+    try {
+        const sessions = await _saveRangeSessions(ips);
+
+        if (!sessions || sessions.length === 0) {
+            alert('Failed to create sessions');
+            return;
+        }
+
+        // Filter out any failed responses (missing id)
+        const valid = sessions.filter(s => s && s.id);
+        if (valid.length === 0) {
+            alert('Failed to create sessions — check server logs');
+            return;
+        }
+
+        $('#range-modal').classList.remove('visible');
+
+        // Small delay to let the range modal fully close before opening batch modal
+        setTimeout(() => {
+            showBatchPasswordModal(valid, groupName);
+        }, 250);
+    } catch (e) {
+        console.error('saveRangeAndConnect error:', e);
+        alert('Error creating sessions: ' + e.message);
+    }
 }
 
 function _getRangeIPs() {
