@@ -104,13 +104,21 @@ function renderSessions() {
 function renderSessionItem(s) {
     const starClass = s.favorite ? 'star active' : 'star';
     const starIcon = s.favorite ? '&#9733;' : '&#9734;';
+    const hasJump = s.jump_host ? true : false;
+    const jumpBadge = hasJump
+        ? `<span class="jump-badge" title="Via ${esc(s.jump_host)}">&#128279; Jump</span>`
+        : '';
+    const hostLine = hasJump
+        ? `${esc(s.jump_host)} &rarr; ${esc(s.host)}`
+        : `${esc(s.username ? s.username + '@' : '')}${esc(s.host)}:${s.port}`;
+
     return `
         <div class="session-item" data-id="${s.id}" ondblclick="connectSession('${s.id}')">
             <button class="${starClass}" onclick="event.stopPropagation(); toggleFavorite('${s.id}')" title="${s.favorite ? 'Remove from favorites' : 'Add to favorites'}">${starIcon}</button>
             <div class="dot" style="background: ${s.color || '#58a6ff'}"></div>
             <div class="info">
-                <div class="name">${esc(s.name || s.host)}</div>
-                <div class="host">${esc(s.username ? s.username + '@' : '')}${esc(s.host)}:${s.port}</div>
+                <div class="name">${esc(s.name || s.host)} ${jumpBadge}</div>
+                <div class="host">${hostLine}</div>
             </div>
             <span class="protocol-badge ${s.protocol}">${s.protocol}</span>
             <div class="actions">
@@ -152,6 +160,8 @@ function showBatchPasswordModal(sessions, label) {
     const modal = $('#batch-modal');
     $('#batch-label').textContent = `Connect ${sessions.length} sessions — ${label}`;
 
+    const hasAnyJump = sessions.some(s => s.jump_host);
+
     // Build the session list with individual password fields
     let html = `
         <div class="batch-option">
@@ -163,18 +173,25 @@ function showBatchPasswordModal(sessions, label) {
         <div id="batch-shared-pw" class="form-group" style="margin-top: 12px;">
             <label>Shared Password</label>
             <input type="password" id="batch-password" placeholder="Enter password for all sessions">
+            ${hasAnyJump ? `
+            <div style="margin-top: 8px;">
+                <label style="font-size: 11px; color: var(--orange);">&#128279; Jump Host Password (if different)</label>
+                <input type="password" id="batch-jump-password" placeholder="Leave empty to use same password">
+            </div>` : ''}
         </div>
         <div id="batch-individual-pw" style="display: none; margin-top: 12px;">`;
 
     sessions.forEach((s, i) => {
+        const jumpInfo = s.jump_host ? ` <span style="color: var(--orange); font-size: 10px;">&#128279; via ${esc(s.jump_host)}</span>` : '';
         html += `
             <div class="batch-session-row">
                 <div class="batch-session-info">
                     <span class="protocol-badge ${s.protocol}" style="font-size: 8px;">${s.protocol}</span>
-                    <span class="batch-session-name">${esc(s.name || s.host)}</span>
+                    <span class="batch-session-name">${esc(s.name || s.host)}${jumpInfo}</span>
                     <span class="batch-session-host">${esc(s.username || 'root')}@${esc(s.host)}</span>
                 </div>
                 <input type="password" class="batch-pw-input" id="batch-pw-${i}" placeholder="Password">
+                ${s.jump_host ? `<input type="password" class="batch-pw-input" id="batch-jpw-${i}" placeholder="Jump PW" style="width: 90px;">` : ''}
             </div>`;
     });
 
@@ -199,16 +216,19 @@ function executeBatchConnect() {
     const sessions = state.batchQueue;
     const samePw = $('#batch-same-pw')?.checked;
     const sharedPassword = $('#batch-password')?.value || '';
+    const sharedJumpPassword = $('#batch-jump-password')?.value || sharedPassword;
 
     $('#batch-modal').classList.remove('visible');
 
     sessions.forEach((s, i) => {
         const password = samePw ? sharedPassword : ($(`#batch-pw-${i}`)?.value || '');
+        const jumpPassword = samePw ? sharedJumpPassword : ($(`#batch-jpw-${i}`)?.value || password);
         // Stagger connections slightly to avoid overwhelming the server
         setTimeout(() => {
             openTerminal({
                 ...s,
                 password,
+                jump_password: s.jump_host ? jumpPassword : '',
             });
         }, i * 300);
     });
@@ -248,6 +268,19 @@ function submitPassword() {
     });
 }
 
+function _getJumpHostConfig() {
+    const useJump = $('#qc-use-jump')?.checked;
+    if (!useJump) return {};
+    return {
+        jump_host: $('#qc-jump-host')?.value?.trim() || '',
+        jump_port: parseInt($('#qc-jump-port')?.value) || 22,
+        jump_username: $('#qc-jump-username')?.value?.trim() || '',
+        jump_password: $('#qc-jump-password')?.value || '',
+        jump_key_path: $('#qc-jump-key-path')?.value?.trim() || '',
+        jump_auth_method: ($('#qc-jump-key-path')?.value?.trim()) ? 'key' : 'password',
+    };
+}
+
 function quickConnect() {
     const protocol = $('#qc-protocol').value;
     const host = $('#qc-host').value.trim();
@@ -272,6 +305,7 @@ function quickConnect() {
         password,
         auth_method: authMethod,
         key_path: keyPath,
+        ..._getJumpHostConfig(),
     });
 }
 
@@ -287,23 +321,28 @@ async function saveAndConnect() {
 
     if (!host) return;
 
+    const jumpConfig = _getJumpHostConfig();
+
     await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, protocol, host, port, username, group, favorite }),
+        body: JSON.stringify({ name, protocol, host, port, username, group, favorite, ...jumpConfig }),
     });
 
     await loadSessions();
     $('#connect-modal').classList.remove('visible');
 
-    openTerminal({ protocol, host, port, username: username || 'root', password });
+    openTerminal({ protocol, host, port, username: username || 'root', password, ...jumpConfig });
 }
 
 // ─── Terminal ───
 
 function openTerminal(config) {
     const wsId = `t_${Date.now()}_${++tabCounter}`;
-    const label = `${config.username || ''}@${config.host}`;
+    const hasJump = config.jump_host ? true : false;
+    const label = hasJump
+        ? `${config.jump_host} \u2192 ${config.host}`
+        : `${config.username || ''}@${config.host}`;
 
     // Create tab
     const tab = {
@@ -608,6 +647,19 @@ async function editSession(sessionId) {
     $('#qc-group').value = s.group;
     $('#qc-favorite').checked = s.favorite || false;
     setProtocol(s.protocol);
+
+    // Jump host fields
+    if (s.jump_host) {
+        $('#qc-use-jump').checked = true;
+        $('#jump-host-fields').style.display = 'block';
+        $('#qc-jump-host').value = s.jump_host || '';
+        $('#qc-jump-port').value = s.jump_port || 22;
+        $('#qc-jump-username').value = s.jump_username || '';
+        $('#qc-jump-key-path').value = s.jump_key_path || '';
+    } else {
+        $('#qc-use-jump').checked = false;
+        $('#jump-host-fields').style.display = 'none';
+    }
 }
 
 async function deleteSession(sessionId) {
@@ -781,6 +833,16 @@ async function _saveRangeSessions(ips) {
     const group = $('#rng-group').value.trim() || 'Default';
     const favorite = $('#rng-favorite').checked;
 
+    // Jump host config for range
+    const useJump = $('#rng-use-jump')?.checked;
+    const jumpConfig = useJump ? {
+        jump_host: $('#rng-jump-host')?.value?.trim() || '',
+        jump_port: parseInt($('#rng-jump-port')?.value) || 22,
+        jump_username: $('#rng-jump-username')?.value?.trim() || '',
+        jump_key_path: $('#rng-jump-key-path')?.value?.trim() || '',
+        jump_auth_method: ($('#rng-jump-key-path')?.value?.trim()) ? 'key' : 'password',
+    } : {};
+
     const created = [];
     for (const ip of ips) {
         const resp = await fetch('/api/sessions', {
@@ -794,7 +856,8 @@ async function _saveRangeSessions(ips) {
                 username,
                 group,
                 favorite,
-                color: protocol === 'ssh' ? '#58a6ff' : '#d29922',
+                color: useJump ? '#db6d28' : (protocol === 'ssh' ? '#58a6ff' : '#d29922'),
+                ...jumpConfig,
             }),
         });
         const session = await resp.json();

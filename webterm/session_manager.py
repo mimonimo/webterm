@@ -27,6 +27,13 @@ class SessionProfile:
     color: str = "#58a6ff"
     favorite: bool = False
     sort_order: int = 0
+    # Jump host (ProxyJump) — connect through this host to reach the target
+    jump_host: str = ""
+    jump_port: int = 22
+    jump_username: str = ""
+    jump_auth_method: Literal["password", "key"] = "password"
+    jump_password: str = ""      # never saved to disk
+    jump_key_path: str = ""
 
     def __post_init__(self):
         if not self.id:
@@ -34,10 +41,15 @@ class SessionProfile:
         if self.protocol == "telnet" and self.port == 22:
             self.port = 23
 
+    @property
+    def has_jump_host(self) -> bool:
+        return bool(self.jump_host)
+
     def to_safe_dict(self) -> dict:
         """Return dict without password for serialization."""
         d = asdict(self)
         d.pop("password", None)
+        d.pop("jump_password", None)
         return d
 
 

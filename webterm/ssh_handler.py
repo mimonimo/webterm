@@ -1,53 +1,107 @@
-"""SSH connection handler using paramiko."""
+"""SSH connection handler using paramiko — supports Jump Host (ProxyJump)."""
 
 from __future__ import annotations
 
-import asyncio
-import threading
+import io
+import stat
 import time
-from typing import Callable
 
 import paramiko
 
 from webterm.session_manager import SessionProfile
 
 
+def _load_pkey(key_path: str) -> paramiko.PKey:
+    """Try loading a private key file with multiple key types."""
+    for cls in (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey):
+        try:
+            return cls.from_private_key_file(key_path)
+        except (paramiko.ssh_exception.SSHException, ValueError):
+            continue
+    raise paramiko.ssh_exception.SSHException(f"Cannot load key: {key_path}")
+
+
+def _build_connect_kwargs(
+    host: str,
+    port: int,
+    username: str,
+    auth_method: str,
+    password: str,
+    key_path: str,
+    sock=None,
+) -> dict:
+    """Build paramiko connect kwargs."""
+    kwargs = {
+        "hostname": host,
+        "port": port,
+        "username": username,
+        "timeout": 10,
+        "allow_agent": False,
+        "look_for_keys": False,
+    }
+    if sock is not None:
+        kwargs["sock"] = sock
+    if auth_method == "key" and key_path:
+        kwargs["pkey"] = _load_pkey(key_path)
+    else:
+        kwargs["password"] = password
+    return kwargs
+
+
 class SSHConnection:
-    """Manages a single SSH connection with PTY."""
+    """Manages a single SSH connection with PTY, optionally via a Jump Host."""
 
     def __init__(self, profile: SessionProfile):
         self.profile = profile
         self.client: paramiko.SSHClient | None = None
         self.channel: paramiko.Channel | None = None
         self._connected = False
+        # Jump host resources
+        self._jump_client: paramiko.SSHClient | None = None
+        self._jump_channel: paramiko.Channel | None = None
 
     def connect(self) -> str:
-        """Establish SSH connection. Returns welcome message or error."""
+        """Establish SSH connection (with optional jump host). Returns welcome text."""
+        sock = None
+
+        # ── Step 1: Connect to Jump Host if configured ──
+        if self.profile.has_jump_host:
+            self._jump_client = paramiko.SSHClient()
+            self._jump_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+            jump_kwargs = _build_connect_kwargs(
+                host=self.profile.jump_host,
+                port=self.profile.jump_port,
+                username=self.profile.jump_username or self.profile.username,
+                auth_method=self.profile.jump_auth_method,
+                password=self.profile.jump_password,
+                key_path=self.profile.jump_key_path,
+            )
+            self._jump_client.connect(**jump_kwargs)
+
+            # Open a tunnel from jump host to the target
+            transport = self._jump_client.get_transport()
+            dest = (self.profile.host, self.profile.port)
+            local = ("127.0.0.1", 0)
+            self._jump_channel = transport.open_channel("direct-tcpip", dest, local)
+            sock = self._jump_channel
+
+        # ── Step 2: Connect to Target (directly or via tunnel) ──
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        connect_kwargs = {
-            "hostname": self.profile.host,
-            "port": self.profile.port,
-            "username": self.profile.username,
-            "timeout": 10,
-            "allow_agent": False,
-            "look_for_keys": False,
-        }
+        target_kwargs = _build_connect_kwargs(
+            host=self.profile.host,
+            port=self.profile.port,
+            username=self.profile.username,
+            auth_method=self.profile.auth_method,
+            password=self.profile.password,
+            key_path=self.profile.key_path,
+            sock=sock,
+        )
+        self.client.connect(**target_kwargs)
 
-        if self.profile.auth_method == "key" and self.profile.key_path:
-            try:
-                pkey = paramiko.RSAKey.from_private_key_file(self.profile.key_path)
-            except paramiko.ssh_exception.SSHException:
-                try:
-                    pkey = paramiko.Ed25519Key.from_private_key_file(self.profile.key_path)
-                except paramiko.ssh_exception.SSHException:
-                    pkey = paramiko.ECDSAKey.from_private_key_file(self.profile.key_path)
-            connect_kwargs["pkey"] = pkey
-        else:
-            connect_kwargs["password"] = self.profile.password
-
-        self.client.connect(**connect_kwargs)
+        # ── Step 3: Open interactive shell ──
         self.channel = self.client.invoke_shell(
             term="xterm-256color",
             width=120,
@@ -96,10 +150,20 @@ class SSHConnection:
     def is_active(self) -> bool:
         if not self._connected or not self.channel:
             return False
-        return self.channel.get_transport() is not None and self.channel.get_transport().is_active()
+        t = self.channel.get_transport()
+        return t is not None and t.is_active()
+
+    @property
+    def hop_info(self) -> str:
+        """Return a human-readable connection path."""
+        if self.profile.has_jump_host:
+            jump = f"{self.profile.jump_username or self.profile.username}@{self.profile.jump_host}:{self.profile.jump_port}"
+            target = f"{self.profile.username}@{self.profile.host}:{self.profile.port}"
+            return f"{jump} → {target}"
+        return f"{self.profile.username}@{self.profile.host}:{self.profile.port}"
 
     def close(self):
-        """Close the SSH connection."""
+        """Close all connections (target + jump host)."""
         self._connected = False
         if self.channel:
             try:
@@ -111,16 +175,26 @@ class SSHConnection:
                 self.client.close()
             except Exception:
                 pass
+        # Close jump host resources
+        if self._jump_channel:
+            try:
+                self._jump_channel.close()
+            except Exception:
+                pass
+        if self._jump_client:
+            try:
+                self._jump_client.close()
+            except Exception:
+                pass
 
     def list_remote_dir(self, path: str = ".") -> list[dict]:
-        """List remote directory via SFTP."""
+        """List remote directory via SFTP (on the target, not jump host)."""
         if not self.client:
             return []
         try:
             sftp = self.client.open_sftp()
             entries = []
             for attr in sftp.listdir_attr(path):
-                import stat
                 is_dir = stat.S_ISDIR(attr.st_mode) if attr.st_mode else False
                 entries.append({
                     "name": attr.filename,
@@ -139,7 +213,6 @@ class SSHConnection:
         if not self.client:
             raise ConnectionError("Not connected")
         sftp = self.client.open_sftp()
-        import io
         buf = io.BytesIO()
         sftp.getfo(remote_path, buf)
         sftp.close()
@@ -151,6 +224,5 @@ class SSHConnection:
         if not self.client:
             raise ConnectionError("Not connected")
         sftp = self.client.open_sftp()
-        import io
         sftp.putfo(io.BytesIO(data), remote_path)
         sftp.close()

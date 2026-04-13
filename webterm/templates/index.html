@@ -138,6 +138,44 @@
                 <input type="text" id="qc-key-path" placeholder="/home/user/.ssh/id_rsa">
             </div>
 
+            <!-- Jump Host Section -->
+            <div style="margin-top: 16px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text); margin-bottom: 8px;">
+                    <input type="checkbox" id="qc-use-jump" style="accent-color: var(--orange); width: 15px; height: 15px;"
+                           onchange="$('#jump-host-fields').style.display = this.checked ? 'block' : 'none'">
+                    &#128279; Connect via Jump Host (ProxyJump)
+                </label>
+                <div id="jump-host-fields" style="display: none; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 8px;">
+                    <div style="font-size: 11px; color: var(--orange); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        &#128279; Jump Host &rarr; Target &nbsp;|&nbsp; Local &#8594; Bastion &#8594; Private Server
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 3">
+                            <label>Jump Host</label>
+                            <input type="text" id="qc-jump-host" placeholder="bastion.example.com">
+                        </div>
+                        <div class="form-group" style="flex: 1">
+                            <label>Port</label>
+                            <input type="number" id="qc-jump-port" value="22">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="qc-jump-username" placeholder="Same as target (leave empty)">
+                        </div>
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="qc-jump-password" placeholder="Jump host password">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Key File (optional)</label>
+                        <input type="text" id="qc-jump-key-path" placeholder="/home/user/.ssh/id_rsa">
+                    </div>
+                </div>
+            </div>
+
             <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0">
 
             <div class="form-row">
@@ -258,6 +296,40 @@
                     <input type="checkbox" id="rng-favorite" checked style="accent-color: var(--yellow); width: 15px; height: 15px;">
                     &#9733; Add all to favorites (one-click batch connect later)
                 </label>
+            </div>
+
+            <!-- Jump Host for Range -->
+            <div style="margin-top: 4px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text); margin-bottom: 8px;">
+                    <input type="checkbox" id="rng-use-jump" style="accent-color: var(--orange); width: 15px; height: 15px;"
+                           onchange="$('#rng-jump-fields').style.display = this.checked ? 'block' : 'none'">
+                    &#128279; All hosts via Jump Host (Bastion)
+                </label>
+                <div id="rng-jump-fields" style="display: none; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
+                    <div style="font-size: 11px; color: var(--orange); margin-bottom: 10px;">
+                        &#128279; Local &rarr; Bastion &rarr; 192.168.x.x (all targets through one jump host)
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 3">
+                            <label>Jump Host</label>
+                            <input type="text" id="rng-jump-host" placeholder="bastion.example.com">
+                        </div>
+                        <div class="form-group" style="flex: 1">
+                            <label>Port</label>
+                            <input type="number" id="rng-jump-port" value="22">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="rng-jump-username" placeholder="Same as targets">
+                        </div>
+                        <div class="form-group">
+                            <label>Key Path (optional)</label>
+                            <input type="text" id="rng-jump-key-path" placeholder="/home/user/.ssh/id_rsa">
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div id="range-preview" class="range-preview" style="display: none;"></div>

@@ -149,12 +149,26 @@ async def terminal_ws(websocket: WebSocket, ws_id: str):
             auth_method=config.get("auth_method", "password"),
             key_path=config.get("key_path", ""),
             protocol=protocol,
+            jump_host=config.get("jump_host", ""),
+            jump_port=int(config.get("jump_port", 22)),
+            jump_username=config.get("jump_username", ""),
+            jump_auth_method=config.get("jump_auth_method", "password"),
+            jump_password=config.get("jump_password", ""),
+            jump_key_path=config.get("jump_key_path", ""),
         )
 
-        await websocket.send_text(json.dumps({
-            "type": "status",
-            "message": f"Connecting to {profile.host}:{profile.port} via {protocol.upper()}..."
-        }))
+        if profile.has_jump_host:
+            jump_label = f"{profile.jump_username or profile.username}@{profile.jump_host}"
+            target_label = f"{profile.username}@{profile.host}"
+            await websocket.send_text(json.dumps({
+                "type": "status",
+                "message": f"Connecting via Jump Host: {jump_label} → {target_label} ..."
+            }))
+        else:
+            await websocket.send_text(json.dumps({
+                "type": "status",
+                "message": f"Connecting to {profile.host}:{profile.port} via {protocol.upper()}..."
+            }))
 
         # Establish connection in thread pool
         loop = asyncio.get_event_loop()

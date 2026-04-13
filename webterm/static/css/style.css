@@ -255,6 +255,19 @@ body {
     transform: scale(1.2);
 }
 
+/* ─── Jump Host Badge ─── */
+
+.jump-badge {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(219, 109, 40, 0.15);
+    color: var(--orange);
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
 /* ─── Batch Modal ─── */
 
 .batch-option {
