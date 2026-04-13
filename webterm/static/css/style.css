@@ -153,6 +153,197 @@ body {
     padding: 8px;
 }
 
+/* ─── Group Headers ─── */
+
+.session-group-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    margin-top: 4px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-dim);
+    transition: background 0.12s;
+    user-select: none;
+}
+
+.session-group-header:hover {
+    background: var(--bg-hover);
+}
+
+.session-group-header .group-chevron {
+    font-size: 9px;
+    width: 12px;
+    text-align: center;
+    color: var(--text-dim);
+}
+
+.session-group-header .group-icon {
+    font-size: 13px;
+}
+
+.session-group-header .group-name {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex: 1;
+}
+
+.session-group-header .group-count {
+    font-size: 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 10px;
+    color: var(--text-dim);
+}
+
+.session-group-header .group-actions {
+    display: none;
+}
+
+.session-group-header:hover .group-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.btn-group-connect {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--green);
+    background: rgba(63, 185, 80, 0.1);
+    color: var(--green);
+    cursor: pointer;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+.btn-group-connect:hover {
+    background: rgba(63, 185, 80, 0.25);
+}
+
+/* ─── Favorite Star ─── */
+
+.session-item .star {
+    font-size: 14px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--text-dim);
+    padding: 0;
+    line-height: 1;
+    opacity: 0.4;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+
+.session-item:hover .star {
+    opacity: 0.8;
+}
+
+.session-item .star.active {
+    color: var(--yellow);
+    opacity: 1;
+}
+
+.session-item .star:hover {
+    opacity: 1;
+    transform: scale(1.2);
+}
+
+/* ─── Batch Modal ─── */
+
+.batch-option {
+    font-size: 13px;
+    color: var(--text);
+}
+
+.batch-option label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.batch-option input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 15px;
+    height: 15px;
+}
+
+.batch-session-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.batch-session-row:last-child {
+    border-bottom: none;
+}
+
+.batch-session-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.batch-session-name {
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.batch-session-host {
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.batch-session-row input[type="password"] {
+    width: 140px;
+    padding: 4px 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 12px;
+}
+
+/* ─── Range Modal ─── */
+
+.range-preview {
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    margin-top: 8px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.range-preview .host-entry {
+    padding: 2px 0;
+}
+
+.range-preview .host-entry .num {
+    color: var(--accent);
+    display: inline-block;
+    width: 24px;
+}
+
 .session-group-label {
     font-size: 11px;
     font-weight: 600;

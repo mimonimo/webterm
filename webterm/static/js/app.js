@@ -12,6 +12,8 @@ const state = {
     sftpVisible: false,
     sftpPath: '~',
     sftpFiles: [],
+    collapsedGroups: {},  // group name -> boolean
+    batchQueue: [],       // sessions awaiting batch connect
 };
 
 let tabCounter = 0;
@@ -31,6 +33,7 @@ async function loadSessions() {
 
 function renderSessions() {
     const list = $('#session-list');
+
     if (state.sessions.length === 0) {
         list.innerHTML = `
             <div style="padding: 20px; text-align: center; color: var(--text-dim); font-size: 13px;">
@@ -39,6 +42,8 @@ function renderSessions() {
         return;
     }
 
+    // Split into favorites and groups
+    const favorites = state.sessions.filter(s => s.favorite);
     const groups = {};
     state.sessions.forEach(s => {
         const g = s.group || 'Default';
@@ -47,26 +52,168 @@ function renderSessions() {
     });
 
     let html = '';
+
+    // ── Favorites section ──
+    if (favorites.length > 0) {
+        const favCollapsed = state.collapsedGroups['__favorites__'];
+        html += `
+            <div class="session-group-header" onclick="toggleGroup('__favorites__')">
+                <span class="group-chevron">${favCollapsed ? '&#9654;' : '&#9660;'}</span>
+                <span class="group-icon">&#9733;</span>
+                <span class="group-name">Favorites</span>
+                <span class="group-count">${favorites.length}</span>
+                <div class="group-actions">
+                    <button class="btn-group-connect" onclick="event.stopPropagation(); batchConnectFavorites()" title="Connect all favorites">
+                        &#9654;&#9654; Connect All
+                    </button>
+                </div>
+            </div>`;
+        if (!favCollapsed) {
+            favorites.forEach(s => {
+                html += renderSessionItem(s);
+            });
+        }
+    }
+
+    // ── Groups ──
     Object.keys(groups).sort().forEach(group => {
-        html += `<div class="session-group-label">${esc(group)}</div>`;
-        groups[group].forEach(s => {
-            html += `
-                <div class="session-item" data-id="${s.id}" ondblclick="connectSession('${s.id}')">
-                    <div class="dot" style="background: ${s.color || '#58a6ff'}"></div>
-                    <div class="info">
-                        <div class="name">${esc(s.name || s.host)}</div>
-                        <div class="host">${esc(s.username ? s.username + '@' : '')}${esc(s.host)}:${s.port}</div>
-                    </div>
-                    <span class="protocol-badge ${s.protocol}">${s.protocol}</span>
-                    <div class="actions">
-                        <button class="btn-icon" title="Connect" onclick="event.stopPropagation(); connectSession('${s.id}')">&#9654;</button>
-                        <button class="btn-icon" title="Edit" onclick="event.stopPropagation(); editSession('${s.id}')">&#9998;</button>
-                        <button class="btn-icon" title="Delete" onclick="event.stopPropagation(); deleteSession('${s.id}')">&#10005;</button>
-                    </div>
-                </div>`;
-        });
+        const sessions = groups[group];
+        const collapsed = state.collapsedGroups[group];
+        html += `
+            <div class="session-group-header" onclick="toggleGroup('${esc(group)}')">
+                <span class="group-chevron">${collapsed ? '&#9654;' : '&#9660;'}</span>
+                <span class="group-icon">&#128193;</span>
+                <span class="group-name">${esc(group)}</span>
+                <span class="group-count">${sessions.length}</span>
+                <div class="group-actions">
+                    <button class="btn-group-connect" onclick="event.stopPropagation(); batchConnectGroup('${esc(group)}')" title="Connect all in group">
+                        &#9654;&#9654; All
+                    </button>
+                </div>
+            </div>`;
+        if (!collapsed) {
+            sessions.forEach(s => {
+                html += renderSessionItem(s);
+            });
+        }
     });
+
     list.innerHTML = html;
+}
+
+function renderSessionItem(s) {
+    const starClass = s.favorite ? 'star active' : 'star';
+    const starIcon = s.favorite ? '&#9733;' : '&#9734;';
+    return `
+        <div class="session-item" data-id="${s.id}" ondblclick="connectSession('${s.id}')">
+            <button class="${starClass}" onclick="event.stopPropagation(); toggleFavorite('${s.id}')" title="${s.favorite ? 'Remove from favorites' : 'Add to favorites'}">${starIcon}</button>
+            <div class="dot" style="background: ${s.color || '#58a6ff'}"></div>
+            <div class="info">
+                <div class="name">${esc(s.name || s.host)}</div>
+                <div class="host">${esc(s.username ? s.username + '@' : '')}${esc(s.host)}:${s.port}</div>
+            </div>
+            <span class="protocol-badge ${s.protocol}">${s.protocol}</span>
+            <div class="actions">
+                <button class="btn-icon" title="Connect" onclick="event.stopPropagation(); connectSession('${s.id}')">&#9654;</button>
+                <button class="btn-icon" title="Edit" onclick="event.stopPropagation(); editSession('${s.id}')">&#9998;</button>
+                <button class="btn-icon" title="Delete" onclick="event.stopPropagation(); deleteSession('${s.id}')">&#10005;</button>
+            </div>
+        </div>`;
+}
+
+function toggleGroup(group) {
+    state.collapsedGroups[group] = !state.collapsedGroups[group];
+    renderSessions();
+}
+
+// ─── Favorites ───
+
+async function toggleFavorite(sessionId) {
+    await fetch(`/api/sessions/${sessionId}/favorite`, { method: 'PATCH' });
+    await loadSessions();
+}
+
+// ─── Batch Connect ───
+
+function batchConnectGroup(groupName) {
+    const sessions = state.sessions.filter(s => (s.group || 'Default') === groupName);
+    if (sessions.length === 0) return;
+    showBatchPasswordModal(sessions, groupName);
+}
+
+function batchConnectFavorites() {
+    const sessions = state.sessions.filter(s => s.favorite);
+    if (sessions.length === 0) return;
+    showBatchPasswordModal(sessions, 'Favorites');
+}
+
+function showBatchPasswordModal(sessions, label) {
+    state.batchQueue = sessions;
+    const modal = $('#batch-modal');
+    $('#batch-label').textContent = `Connect ${sessions.length} sessions — ${label}`;
+
+    // Build the session list with individual password fields
+    let html = `
+        <div class="batch-option">
+            <label>
+                <input type="checkbox" id="batch-same-pw" checked onchange="toggleBatchPwMode()">
+                Use same password for all sessions
+            </label>
+        </div>
+        <div id="batch-shared-pw" class="form-group" style="margin-top: 12px;">
+            <label>Shared Password</label>
+            <input type="password" id="batch-password" placeholder="Enter password for all sessions">
+        </div>
+        <div id="batch-individual-pw" style="display: none; margin-top: 12px;">`;
+
+    sessions.forEach((s, i) => {
+        html += `
+            <div class="batch-session-row">
+                <div class="batch-session-info">
+                    <span class="protocol-badge ${s.protocol}" style="font-size: 8px;">${s.protocol}</span>
+                    <span class="batch-session-name">${esc(s.name || s.host)}</span>
+                    <span class="batch-session-host">${esc(s.username || 'root')}@${esc(s.host)}</span>
+                </div>
+                <input type="password" class="batch-pw-input" id="batch-pw-${i}" placeholder="Password">
+            </div>`;
+    });
+
+    html += '</div>';
+    $('#batch-session-list').innerHTML = html;
+    modal.classList.add('visible');
+    setTimeout(() => $('#batch-password')?.focus(), 100);
+}
+
+function toggleBatchPwMode() {
+    const same = $('#batch-same-pw').checked;
+    $('#batch-shared-pw').style.display = same ? 'block' : 'none';
+    $('#batch-individual-pw').style.display = same ? 'none' : 'block';
+    if (same) {
+        setTimeout(() => $('#batch-password')?.focus(), 50);
+    } else {
+        setTimeout(() => $('#batch-pw-0')?.focus(), 50);
+    }
+}
+
+function executeBatchConnect() {
+    const sessions = state.batchQueue;
+    const samePw = $('#batch-same-pw')?.checked;
+    const sharedPassword = $('#batch-password')?.value || '';
+
+    $('#batch-modal').classList.remove('visible');
+
+    sessions.forEach((s, i) => {
+        const password = samePw ? sharedPassword : ($(`#batch-pw-${i}`)?.value || '');
+        // Stagger connections slightly to avoid overwhelming the server
+        setTimeout(() => {
+            openTerminal({
+                ...s,
+                password,
+            });
+        }, i * 300);
+    });
+
+    state.batchQueue = [];
 }
 
 // ─── Connection ───
@@ -136,13 +283,14 @@ async function saveAndConnect() {
     const password = $('#qc-password').value;
     const name = $('#qc-name').value.trim() || host;
     const group = $('#qc-group').value.trim() || 'Default';
+    const favorite = $('#qc-favorite')?.checked || false;
 
     if (!host) return;
 
-    const resp = await fetch('/api/sessions', {
+    await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, protocol, host, port, username, group }),
+        body: JSON.stringify({ name, protocol, host, port, username, group, favorite }),
     });
 
     await loadSessions();
@@ -431,6 +579,7 @@ function showConnectModal() {
     $('#qc-password').value = '';
     $('#qc-name').value = '';
     $('#qc-group').value = 'Default';
+    $('#qc-favorite').checked = false;
     setProtocol('ssh');
     modal.classList.add('visible');
     setTimeout(() => $('#qc-host').focus(), 100);
@@ -457,6 +606,7 @@ async function editSession(sessionId) {
     $('#qc-username').value = s.username;
     $('#qc-name').value = s.name;
     $('#qc-group').value = s.group;
+    $('#qc-favorite').checked = s.favorite || false;
     setProtocol(s.protocol);
 }
 
@@ -511,6 +661,150 @@ function formatSize(bytes) {
     return (bytes / 1073741824).toFixed(1) + ' GB';
 }
 
+// ─── Range Add ───
+
+function showRangeModal() {
+    const modal = $('#range-modal');
+    $('#rng-start').value = '';
+    $('#rng-end').value = '';
+    $('#rng-port').value = '22';
+    $('#rng-username').value = 'root';
+    $('#rng-group').value = 'Default';
+    $('#rng-favorite').checked = true;
+    $('#rng-protocol').value = 'ssh';
+    $$('#range-modal .proto-btn').forEach(b => b.classList.toggle('active', b.dataset.proto === 'ssh'));
+    $('#range-preview').style.display = 'none';
+    modal.classList.add('visible');
+    setTimeout(() => $('#rng-start').focus(), 100);
+}
+
+function setRangeProtocol(proto) {
+    $('#rng-protocol').value = proto;
+    $$('#range-modal .proto-btn').forEach(b => b.classList.toggle('active', b.dataset.proto === proto));
+    $('#rng-port').value = proto === 'ssh' ? '22' : '23';
+}
+
+function parseIP(ip) {
+    const parts = ip.trim().split('.');
+    if (parts.length !== 4) return null;
+    const nums = parts.map(Number);
+    if (nums.some(n => isNaN(n) || n < 0 || n > 255)) return null;
+    return nums;
+}
+
+function ipToNum(parts) {
+    return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
+}
+
+function numToIP(num) {
+    return [
+        (num >>> 24) & 255,
+        (num >>> 16) & 255,
+        (num >>> 8) & 255,
+        num & 255,
+    ].join('.');
+}
+
+function generateIPRange(startIP, endIP) {
+    const start = parseIP(startIP);
+    const end = parseIP(endIP);
+    if (!start || !end) return [];
+
+    const startNum = ipToNum(start) >>> 0;
+    const endNum = ipToNum(end) >>> 0;
+    if (endNum < startNum) return [];
+
+    const count = endNum - startNum + 1;
+    if (count > 256) return []; // Safety limit
+
+    const ips = [];
+    for (let i = startNum; i <= endNum; i++) {
+        ips.push(numToIP(i >>> 0));
+    }
+    return ips;
+}
+
+function updateRangePreview() {
+    const startIP = $('#rng-start').value;
+    const endIP = $('#rng-end').value;
+    const preview = $('#range-preview');
+
+    if (!startIP || !endIP) {
+        preview.style.display = 'none';
+        return;
+    }
+
+    const ips = generateIPRange(startIP, endIP);
+    if (ips.length === 0) {
+        preview.style.display = 'block';
+        preview.innerHTML = '<span style="color: var(--red);">Invalid range. Check IP addresses.</span>';
+        return;
+    }
+
+    preview.style.display = 'block';
+    preview.innerHTML = `<div style="margin-bottom: 6px; color: var(--accent); font-weight: 600;">${ips.length} hosts:</div>` +
+        ips.map((ip, i) => `<div class="host-entry"><span class="num">${i + 1}.</span> ${ip}</div>`).join('');
+}
+
+async function saveRange() {
+    const ips = _getRangeIPs();
+    if (!ips) return;
+    await _saveRangeSessions(ips);
+    $('#range-modal').classList.remove('visible');
+}
+
+async function saveRangeAndConnect() {
+    const ips = _getRangeIPs();
+    if (!ips) return;
+    const sessions = await _saveRangeSessions(ips);
+    $('#range-modal').classList.remove('visible');
+
+    // Show batch password modal for all created sessions
+    showBatchPasswordModal(sessions, $('#rng-group').value || 'Default');
+}
+
+function _getRangeIPs() {
+    const startIP = $('#rng-start').value;
+    const endIP = $('#rng-end').value;
+    const ips = generateIPRange(startIP, endIP);
+    if (ips.length === 0) {
+        alert('Invalid IP range');
+        return null;
+    }
+    return ips;
+}
+
+async function _saveRangeSessions(ips) {
+    const protocol = $('#rng-protocol').value;
+    const port = parseInt($('#rng-port').value) || (protocol === 'ssh' ? 22 : 23);
+    const username = $('#rng-username').value.trim() || 'root';
+    const group = $('#rng-group').value.trim() || 'Default';
+    const favorite = $('#rng-favorite').checked;
+
+    const created = [];
+    for (const ip of ips) {
+        const resp = await fetch('/api/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: ip,
+                protocol,
+                host: ip,
+                port,
+                username,
+                group,
+                favorite,
+                color: protocol === 'ssh' ? '#58a6ff' : '#d29922',
+            }),
+        });
+        const session = await resp.json();
+        created.push(session);
+    }
+
+    await loadSessions();
+    return created;
+}
+
 // ─── Keyboard Shortcuts ───
 
 document.addEventListener('keydown', (e) => {
@@ -538,6 +832,11 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         toggleSidebar();
     }
+    // Ctrl+Shift+F — Connect all favorites
+    if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        batchConnectFavorites();
+    }
     // Escape — Close modals
     if (e.key === 'Escape') {
         $$('.modal-overlay').forEach(m => m.classList.remove('visible'));
@@ -545,6 +844,10 @@ document.addEventListener('keydown', (e) => {
     // Enter in password modal
     if (e.key === 'Enter' && $('#password-modal').classList.contains('visible')) {
         submitPassword();
+    }
+    // Enter in batch modal
+    if (e.key === 'Enter' && $('#batch-modal').classList.contains('visible')) {
+        executeBatchConnect();
     }
 });
 

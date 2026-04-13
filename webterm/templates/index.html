@@ -21,7 +21,8 @@
             <span class="version">v{{ version }}</span>
         </div>
         <div class="sidebar-actions">
-            <button class="btn btn-primary" onclick="showConnectModal()">&#43; New Connection</button>
+            <button class="btn btn-primary" onclick="showConnectModal()" style="flex: 2">&#43; New</button>
+            <button class="btn" onclick="showRangeModal()" title="Add multiple hosts by IP range" style="flex: 1">&#127760; Range</button>
         </div>
         <div class="session-list" id="session-list">
             <!-- Populated by JS -->
@@ -48,6 +49,7 @@
                 </button>
                 <div class="shortcuts">
                     <kbd>Ctrl+Shift+N</kbd> <span>New connection</span>
+                    <kbd>Ctrl+Shift+F</kbd> <span>Connect all favorites</span>
                     <kbd>Ctrl+W</kbd> <span>Close tab</span>
                     <kbd>Ctrl+Tab</kbd> <span>Next tab</span>
                     <kbd>Ctrl+B</kbd> <span>Toggle sidebar</span>
@@ -148,6 +150,12 @@
                     <input type="text" id="qc-group" value="Default">
                 </div>
             </div>
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; text-transform: none; font-size: 13px; color: var(--text);">
+                    <input type="checkbox" id="qc-favorite" style="accent-color: var(--yellow); width: 15px; height: 15px;">
+                    &#9733; Add to favorites
+                </label>
+            </div>
         </div>
         <div class="modal-footer">
             <button class="btn" onclick="$('#connect-modal').classList.remove('visible')">Cancel</button>
@@ -175,6 +183,89 @@
         <div class="modal-footer">
             <button class="btn" onclick="$('#password-modal').classList.remove('visible')">Cancel</button>
             <button class="btn btn-primary" onclick="submitPassword()">Connect</button>
+        </div>
+    </div>
+</div>
+
+<!-- ─── Batch Connect Modal ─── -->
+<div class="modal-overlay" id="batch-modal">
+    <div class="modal" style="width: 520px">
+        <div class="modal-header">
+            <h3>&#9654;&#9654; Batch Connect</h3>
+            <button class="btn-icon" onclick="$('#batch-modal').classList.remove('visible')">&#10005;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 12px" id="batch-label"></p>
+            <div id="batch-session-list"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="$('#batch-modal').classList.remove('visible')">Cancel</button>
+            <button class="btn btn-primary" onclick="executeBatchConnect()" style="background: var(--green); border-color: var(--green);">&#9654; Connect All</button>
+        </div>
+    </div>
+</div>
+
+<!-- ─── Range Add Modal ─── -->
+<div class="modal-overlay" id="range-modal">
+    <div class="modal" style="width: 520px">
+        <div class="modal-header">
+            <h3>&#127760; Add Hosts by Range</h3>
+            <button class="btn-icon" onclick="$('#range-modal').classList.remove('visible')">&#10005;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 16px;">
+                Add multiple hosts at once using an IP range. Example: <code style="background: var(--bg-primary); padding: 2px 6px; border-radius: 3px;">192.168.0.1 ~ 192.168.0.10</code>
+            </p>
+
+            <div class="form-group">
+                <label>Protocol</label>
+                <input type="hidden" id="rng-protocol" value="ssh">
+                <div class="protocol-tabs">
+                    <button class="proto-btn active" data-proto="ssh" onclick="setRangeProtocol('ssh')">&#128274; SSH</button>
+                    <button class="proto-btn" data-proto="telnet" onclick="setRangeProtocol('telnet')">&#128225; Telnet</button>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group" style="flex: 2">
+                    <label>Start IP</label>
+                    <input type="text" id="rng-start" placeholder="192.168.0.1" oninput="updateRangePreview()">
+                </div>
+                <div style="display: flex; align-items: center; padding-top: 20px; font-size: 18px; color: var(--text-dim);">~</div>
+                <div class="form-group" style="flex: 2">
+                    <label>End IP</label>
+                    <input type="text" id="rng-end" placeholder="192.168.0.10" oninput="updateRangePreview()">
+                </div>
+                <div class="form-group" style="flex: 1">
+                    <label>Port</label>
+                    <input type="number" id="rng-port" value="22">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Username (all hosts)</label>
+                    <input type="text" id="rng-username" placeholder="root" value="root">
+                </div>
+                <div class="form-group">
+                    <label>Group</label>
+                    <input type="text" id="rng-group" placeholder="Production Servers" value="Default">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; text-transform: none; font-size: 13px; color: var(--text);">
+                    <input type="checkbox" id="rng-favorite" checked style="accent-color: var(--yellow); width: 15px; height: 15px;">
+                    &#9733; Add all to favorites (one-click batch connect later)
+                </label>
+            </div>
+
+            <div id="range-preview" class="range-preview" style="display: none;"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="$('#range-modal').classList.remove('visible')">Cancel</button>
+            <button class="btn" onclick="saveRange()" style="border-color: var(--accent); color: var(--accent);">Save Only</button>
+            <button class="btn btn-primary" onclick="saveRangeAndConnect()" style="background: var(--green); border-color: var(--green);">Save &amp; Connect All</button>
         </div>
     </div>
 </div>

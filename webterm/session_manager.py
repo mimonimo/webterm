@@ -25,6 +25,8 @@ class SessionProfile:
     key_path: str = ""
     group: str = "Default"
     color: str = "#58a6ff"
+    favorite: bool = False
+    sort_order: int = 0
 
     def __post_init__(self):
         if not self.id:

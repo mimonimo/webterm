@@ -76,6 +76,29 @@ async def delete_session(session_id: str):
     return JSONResponse({"error": "Not found"}, status_code=404)
 
 
+@app.patch("/api/sessions/{session_id}/favorite")
+async def toggle_favorite(session_id: str):
+    s = store.get(session_id)
+    if not s:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    store.update(session_id, favorite=not s.favorite)
+    return JSONResponse({"ok": True, "favorite": not s.favorite})
+
+
+@app.get("/api/sessions/group/{group_name}")
+async def list_group_sessions(group_name: str):
+    all_sessions = store.list_all()
+    group_sessions = [s for s in all_sessions if s.get("group", "Default") == group_name]
+    return JSONResponse(group_sessions)
+
+
+@app.get("/api/sessions/favorites")
+async def list_favorites():
+    all_sessions = store.list_all()
+    favs = [s for s in all_sessions if s.get("favorite")]
+    return JSONResponse(favs)
+
+
 # ─── SFTP API ───
 
 @app.get("/api/sftp/{ws_id}/ls")
